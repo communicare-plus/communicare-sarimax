@@ -1,9 +1,33 @@
 
 from flask import Flask, request, jsonify
 import pandas as pd
+import os
+import hmac
+
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
 app = Flask(__name__)
+
+
+# API KEY VALIDATION
+def validate_api_key():
+
+    expected_key = os.environ.get('COMMUNICARE_API_KEY')
+    received_key = request.headers.get('X-API-KEY', '')
+
+    if not expected_key:
+        return jsonify({
+            'success': False,
+            'message': 'API authentication is not configured.'
+        }), 500
+
+    if not hmac.compare_digest(received_key, expected_key):
+        return jsonify({
+            'success': False,
+            'message': 'Unauthorized. Invalid API key.'
+        }), 401
+
+    return None
 
 
 @app.route('/', methods=['GET'])
@@ -16,6 +40,12 @@ def home():
 
 @app.route('/forecast', methods=['POST'])
 def forecast():
+
+    # CHECK API KEY BEFORE PROCESSING REQUEST
+    auth_error = validate_api_key()
+
+    if auth_error:
+        return auth_error
 
     try:
         # Receive JSON from PHP
@@ -85,7 +115,6 @@ def forecast():
         series = df['served'].asfreq('MS')
 
         # Fill missing months with zero
-        # Only appropriate if missing months mean zero dispensing.
         series = series.fillna(0)
 
         if len(series) < 24:
